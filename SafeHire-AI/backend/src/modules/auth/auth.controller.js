@@ -20,12 +20,13 @@ const asyncWrapper = require("../../middlewares/asyncWrapper");
 // ─── Cookie config ────────────────────────────────────────────────────────────
 // Centralized cookie options — same config used for set and clear
 // httpOnly: true  → JS cannot read this cookie (XSS protection)
-// secure: true    → Cookie only sent over HTTPS (in production)
-// sameSite: strict → Cookie not sent on cross-site requests (CSRF protection)
+// secure: true    → required when sameSite is "none" in modern browsers
+// sameSite: "none" → required for cross-origin cookie requests from localhost dev
+const isProduction = process.env.NODE_ENV === "production";
 const REFRESH_TOKEN_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "strict",
+  secure: true,
+  sameSite: isProduction ? "strict" : "none",
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
   path: "/api/v1/auth",             // Cookie only sent to auth routes — not every request
 };

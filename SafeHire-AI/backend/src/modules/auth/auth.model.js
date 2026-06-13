@@ -178,17 +178,9 @@ userSchema.index({ createdAt: -1 });              // Sort by newest first
 // The `isModified("password")` check is critical:
 // Without it, every time you update ANY field (e.g. lastLoginAt), the password
 // gets re-hashed — and the existing hash gets hashed again, breaking login.
-userSchema.pre("save", async function (next) {
-  // `this` = the user document being saved
-  // Only hash if password field was actually changed
-  if (!this.isModified("password")) return next();
-
-  // bcrypt salt rounds = 12
-  // Salt rounds = how many times the hashing algorithm runs.
-  // Higher = more secure but slower. 12 is the production standard.
-  // 10 rounds ≈ 65ms, 12 rounds ≈ 250ms — slow enough to defeat brute force
+userSchema.pre("save", async function() {
+  if (!this.isModified("password")) return;
   this.password = await bcrypt.hash(this.password, 12);
-  next();
 });
 
 // ─── Instance Methods ─────────────────────────────────────────────────────────

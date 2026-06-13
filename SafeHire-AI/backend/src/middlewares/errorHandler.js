@@ -37,7 +37,7 @@ const errorHandler = (err, req, res, next) => {
 
   // ── Case 1: Our own ApiError — already has statusCode and message ──────────
   // This is the happy path — we threw this intentionally with a clear message
-  if (err instanceof ApiError) {
+ if (err && err.statusCode && err.success === false) {
     return res.status(err.statusCode).json({
       success: false,
       statusCode: err.statusCode,

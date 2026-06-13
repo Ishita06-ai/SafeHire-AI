@@ -1,74 +1,94 @@
 /**
- * src/utils/logger.js — Centralized logging utility
+ * utils/logger.js — Centralized structured logger using Winston
  *
  * WHY THIS FILE EXISTS:
- * One centralized place that handles connecting to MongoDB,
- * retrying on failure, pooling connections, and logging DB events.
- * No other file should ever call mongoose.connect() directly.
+ * console.log() has no levels, no timestamps, no structure, and no way to
+ * send logs to external services. Winston gives us all of that.
+ *
+ * USAGE (anywhere in the app):
+ *   const logger = require('../utils/logger');
+ *   logger.info('User logged in', { userId: '123' });
+ *   logger.error('DB query failed', { error: err.message });
+ *   logger.warn('Rate limit approaching', { ip: '1.2.3.4' });
  */
 
 "use strict";
 
-const mongoose = require("mongoose");
-const logger = require("./logger");
+const { createLogger, format, transports } = require("winston");
+const path = require("path");
 
-// ─── Connection options ───────────────────────────────────────────────────────
-// Tuning knobs for the connection pool.
-const MONGO_OPTIONS = {
-  maxPoolSize: 10,          // Keep 10 reusable connections open (like 10 waiters on staff)
-  serverSelectionTimeoutMS: 5_000,  // Give up finding a MongoDB server after 5s
-  socketTimeoutMS: 45_000,          // Close socket if no response for 45s
-  family: 4,                        // Use IPv4 — avoids IPv6 DNS lookup delays
+const { combine, timestamp, errors, json, colorize, printf } = format;
+
+const isDevelopment = process.env.NODE_ENV !== "production";
+
+// ─── Development format ───────────────────────────────────────────────────────
+// Human-readable, colorized output for your terminal while coding.
+// Example output:
+//   2024-01-15 10:23:01 [INFO]  MongoDB connected: cluster0.mongodb.net
+//   2024-01-15 10:23:05 [ERROR] JWT verification failed { error: 'TokenExpiredError' }
+const devFormat = combine(
+  colorize({ all: true }),
+  timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+  errors({ stack: true }), // If you log an Error object, include the stack trace
+  printf(({ timestamp, level, message, stack, ...meta }) => {
+    // meta = any extra object you pass as second argument to logger.info(msg, meta)
+    const metaStr = Object.keys(meta).length ? JSON.stringify(meta) : "";
+    return `${timestamp} [${level}] ${message} ${metaStr} ${stack || ""}`.trim();
+  })
+);
+
+// ─── Production format ────────────────────────────────────────────────────────
+// Every log is a JSON object. Logging services (Datadog, CloudWatch) ingest this.
+// Example output:
+//   {"timestamp":"2024-01-15T10:23:01.000Z","level":"error","message":"JWT failed","error":"TokenExpiredError"}
+const prodFormat = combine(
+  timestamp(),       // ISO 8601 timestamp
+  errors({ stack: true }),
+  json()             // Serialize the entire log entry as JSON
+);
+
+// ─── Transports = where logs go ──────────────────────────────────────────────
+// In development: just the console.
+// In production: console (captured by Docker/PM2) + error log file as backup.
+const logTransports = [
+  new transports.Console(),
+];
+
+if (!isDevelopment) {
+  // In production, also write error-level logs to a file.
+  // Useful as a local backup if your logging service is briefly unavailable.
+  logTransports.push(
+    new transports.File({
+      filename: path.join("logs", "error.log"),
+      level: "error",      // Only write errors to this file
+      maxsize: 5_242_880,  // 5MB max per file
+      maxFiles: 5,         // Keep last 5 rotated files
+    })
+  );
+}
+
+// ─── Create the logger instance ───────────────────────────────────────────────
+const logger = createLogger({
+  // Log levels (low number = high priority):
+  // error: 0, warn: 1, info: 2, http: 3, verbose: 4, debug: 5
+  // Setting level: "info" means: log info, warn, and error. Skip debug/verbose.
+  level: isDevelopment ? "debug" : "info",
+
+  format: isDevelopment ? devFormat : prodFormat,
+
+  transports: logTransports,
+
+  // If Winston itself throws an error (e.g. can't write to log file),
+  // don't crash the entire app — just silently ignore it.
+  exitOnError: false,
+});
+
+// ─── HTTP request logger stream ───────────────────────────────────────────────
+// Morgan (HTTP request logger middleware) can pipe its output through Winston.
+// This means all HTTP logs share the same format and destination as app logs.
+// Used in app.js: morgan('combined', { stream: logger.stream })
+logger.stream = {
+  write: (message) => logger.http(message.trim()),
 };
 
-// ─── Retry config ─────────────────────────────────────────────────────────────
-const MAX_RETRIES = 5;
-const RETRY_DELAY_MS = 3_000; // Wait 3 seconds between each retry attempt
-
-// ─── Main connect function ────────────────────────────────────────────────────
-// Called once in server.js before the HTTP server starts listening.
-// If MongoDB is unavailable, we retry up to MAX_RETRIES times before giving up.
-const connectDB = async (retryCount = 0) => {
-  try {
-    const conn = await mongoose.connect(process.env.MONGO_URI, MONGO_OPTIONS);
-    logger.info(`MongoDB connected: ${conn.connection.host}`);
-
-    // Attach event listeners AFTER first successful connection.
-    // These fire if the connection drops while the app is running.
-    setupConnectionEvents();
-
-  } catch (err) {
-    logger.error(`MongoDB connection failed (attempt ${retryCount + 1}/${MAX_RETRIES})`, {
-      error: err.message,
-    });
-
-    if (retryCount < MAX_RETRIES - 1) {
-      logger.info(`Retrying in ${RETRY_DELAY_MS / 1000}s...`);
-      // Wait, then retry — the retryCount increments each time
-      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-      return connectDB(retryCount + 1);
-    }
-
-    // All retries exhausted — throw so server.js can catch it and exit cleanly
-    throw new Error(`Could not connect to MongoDB after ${MAX_RETRIES} attempts.`);
-  }
-};
-
-// ─── Connection event listeners ───────────────────────────────────────────────
-// WHY: MongoDB can disconnect mid-runtime (network blip, Atlas maintenance).
-// Mongoose auto-reconnects, but we want logs so we can debug/alert in production.
-const setupConnectionEvents = () => {
-  mongoose.connection.on("disconnected", () => {
-    logger.warn("MongoDB disconnected. Mongoose will auto-reconnect...");
-  });
-
-  mongoose.connection.on("reconnected", () => {
-    logger.info("MongoDB reconnected successfully.");
-  });
-
-  mongoose.connection.on("error", (err) => {
-    logger.error("MongoDB runtime error:", { error: err.message });
-  });
-};
-
-module.exports = connectDB;
+module.exports = logger;
