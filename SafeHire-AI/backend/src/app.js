@@ -26,6 +26,8 @@ const { errorHandler, notFoundHandler } = require("./middlewares/errorHandler");
 const authRoutes         = require("./modules/auth/auth.routes");
 const conversationRoutes = require("./modules/conversations/conversation.routes");
 const reportRoutes       = require("./modules/reports/report.routes");
+const verificationRoutes = require("./modules/verification/verification.routes");
+const multiAgentRoutes   = require("./modules/multi-agent/multiAgent.routes");
 
 const app = express();
 
@@ -96,6 +98,8 @@ app.get("/health", (req, res) => {
 app.use("/api/v1/auth",                    authRoutes);
 app.use("/api/v1/analysis/conversation",   conversationRoutes);
 app.use("/api/v1/reports",                 reportRoutes);
+app.use("/api/v1/verification",            verificationRoutes);
+app.use("/api/v1/multi-agent",             multiAgentRoutes);
 
 // ─── Error handling (MUST be last) ───────────────────────────────────────────
 app.use(notFoundHandler);

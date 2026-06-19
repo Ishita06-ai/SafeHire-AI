@@ -22,6 +22,8 @@ const DashboardPage     = lazy(() => import("../../modules/dashboard/DashboardPa
 const AnalysisPage      = lazy(() => import("../../modules/conversation-analysis/AnalysisPage"));
 const AnalysisResult    = lazy(() => import("../../modules/conversation-analysis/AnalysisResult"));
 const ThreatPage        = lazy(() => import("../../modules/threat-intelligence/ThreatPage"));
+const VerifyCompanyPage = lazy(() => import("../../modules/company-verification/VerifyCompanyPage"));
+const VerificationResult = lazy(() => import("../../modules/company-verification/VerificationResult"));
 
 // Loading spinner shown while lazy components load
 const PageLoader = () => (
@@ -61,6 +63,8 @@ export function AppRouter() {
         <Route path="/analyze"   element={<ProtectedRoute><AnalysisPage /></ProtectedRoute>} />
         <Route path="/analysis/:id" element={<ProtectedRoute><AnalysisResult /></ProtectedRoute>} />
         <Route path="/threats"   element={<ProtectedRoute><ThreatPage /></ProtectedRoute>} />
+        <Route path="/verify-company"     element={<ProtectedRoute><VerifyCompanyPage /></ProtectedRoute>} />
+        <Route path="/verify-company/:id" element={<ProtectedRoute><VerificationResult /></ProtectedRoute>} />
 
         {/* 404 */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

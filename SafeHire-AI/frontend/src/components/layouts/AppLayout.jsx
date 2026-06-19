@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useSelector } from "react-redux";
-import { LayoutDashboard, Search, Shield, LogOut } from "lucide-react";
+import { LayoutDashboard, Search, Shield, BadgeCheck, LogOut } from "lucide-react";
 import { motion } from "framer-motion";
 import { selectUser } from "../../app/store/authSlice";
 import { useLogout } from "../../modules/auth/hooks/useAuth";
@@ -9,6 +9,7 @@ import { cn } from "../../utils/cn";
 const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard",   group: "OVERVIEW"   },
   { to: "/analyze",   icon: Search,          label: "Analyze",      group: "MANAGEMENT" },
+  { to: "/verify-company", icon: BadgeCheck, label: "Verify Company", group: "MANAGEMENT" },
   { to: "/threats",   icon: Shield,          label: "Threat Intel", group: "MANAGEMENT" },
 ];
 

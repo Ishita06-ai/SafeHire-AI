@@ -23,4 +23,6 @@ export const QUERY_KEYS = {
   STATS:         ["stats"],
   THREATS:       ["threats"],
   REPORTS:       ["reports"],
+  VERIFICATIONS: ["verifications"],
+  VERIFICATION:  (id) => ["verifications", id],
 };
