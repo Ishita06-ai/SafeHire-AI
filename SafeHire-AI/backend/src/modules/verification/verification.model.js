@@ -70,6 +70,27 @@ const aiAssessmentSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// Summarized-only — never raw scraped review/post text (see
+// communityReputation.service.js header for why).
+const communityReputationSchema = new mongoose.Schema(
+  {
+    discussionsFound: { type: Number, default: 0 },
+    positiveMentions: { type: Number, default: 0 },
+    negativeMentions: { type: Number, default: 0 },
+    commonPositives: { type: [String], default: [] },
+    commonNegatives: { type: [String], default: [] },
+    scamSpecificFlags: { type: [String], default: [] },
+    trustSignal: {
+      type: String,
+      enum: ["HIGH", "MEDIUM", "LOW", "INSUFFICIENT_DATA"],
+      default: "INSUFFICIENT_DATA",
+    },
+    communityScore: { type: Number, min: 0, max: 100, default: null },
+    summary: { type: String, default: "", maxlength: 600 },
+  },
+  { _id: false }
+);
+
 const verificationSchema = new mongoose.Schema(
   {
     user: {
@@ -98,6 +119,7 @@ const verificationSchema = new mongoose.Schema(
     },
 
     aiAssessment: { type: aiAssessmentSchema, default: () => ({}) },
+    communityReputation: { type: communityReputationSchema, default: () => ({}) },
 
     // Same async lifecycle pattern as Conversation
     status: {

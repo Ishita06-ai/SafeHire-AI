@@ -19,20 +19,28 @@
 const verificationRepository = require("./verification.repository");
 const aiAnalysisService = require("../../services/aiAnalysis.service");
 const domainVerificationService = require("../../services/domainVerification.service");
+const communityReputationService = require("../../services/communityReputation.service");
 const ApiError = require("../../utils/ApiError");
 const logger = require("../../utils/logger");
 
 // Weights sum to 100 when every check is applicable. Checks that don't apply
 // (e.g. no LinkedIn URL given) are excluded from both sides of the ratio —
 // see _computeTrustScore — so a missing field doesn't unfairly tank the score.
+//
+// COMMUNITY_REPUTATION is deliberately weighted lower than the deterministic
+// technical checks (website/MX/email-domain) combined. A few negative
+// reviews don't make a company a scam, and a fake domain + free-email
+// recruiter + upfront payment request are far stronger signals than online
+// sentiment — so community opinion supports the score, it doesn't drive it.
 const WEIGHTS = {
-  WEBSITE_FOUND: 25,
-  WEBSITE_SECURE: 10,
-  DOMAIN_HAS_MX: 10,
-  EMAIL_DOMAIN_MATCH: 20,
-  EMAIL_NOT_FREE_PROVIDER: 15,
-  LINKEDIN_REACHABLE: 10,
-  AI_CONSISTENCY: 10,
+  WEBSITE_FOUND: 22,
+  WEBSITE_SECURE: 8,
+  DOMAIN_HAS_MX: 8,
+  EMAIL_DOMAIN_MATCH: 17,
+  EMAIL_NOT_FREE_PROVIDER: 13,
+  LINKEDIN_REACHABLE: 8,
+  AI_CONSISTENCY: 9,
+  COMMUNITY_REPUTATION: 15,
 };
 
 class VerificationService {
@@ -58,10 +66,11 @@ class VerificationService {
         domainVerificationService.normalizeDomain(extraction.website) ||
         domainVerificationService.extractDomainFromEmail(extraction.email);
 
-      const [websiteCheck, mxCheck, linkedinCheck] = await Promise.all([
+      const [websiteCheck, mxCheck, linkedinCheck, communityReputation] = await Promise.all([
         domainVerificationService.checkWebsite(domainToCheck),
         domainVerificationService.checkMxRecords(domainToCheck),
         domainVerificationService.checkLinkedinUrl(extraction.linkedinUrl),
+        communityReputationService.analyze(extraction.companyName, extraction.roleTitle),
       ]);
 
       const checks = this._buildChecks({
@@ -70,6 +79,7 @@ class VerificationService {
         mxCheck,
         linkedinCheck,
         domainToCheck,
+        communityReputation,
       });
       const trustScore = this._computeTrustScore(checks);
 
@@ -88,6 +98,7 @@ class VerificationService {
         },
         checks,
         trustScore,
+        communityReputation: communityReputation || undefined,
         aiAssessment: {
           consistencyScore: extraction.consistencyScore,
           summary: extraction.consistencyNotes,
@@ -107,7 +118,7 @@ class VerificationService {
   }
 
   // ─── Turn raw check results into the checklist the UI renders ──────────────
-  _buildChecks({ extraction, websiteCheck, mxCheck, linkedinCheck, domainToCheck }) {
+  _buildChecks({ extraction, websiteCheck, mxCheck, linkedinCheck, domainToCheck, communityReputation }) {
     const checks = [];
 
     if (!domainToCheck) {
@@ -137,7 +148,7 @@ class VerificationService {
         websiteDetail = `${domainToCheck} resolves, but the site blocked our automated request (common for sites behind bot-protection). Please check it manually.${sourceNote}`;
       } else {
         websiteStatus = "FAIL";
-        websiteDetail = `${domainToCheck} could not be reached.${sourceNote}`;
+        websiteDetail = `We could not find a working website at ${domainToCheck}. This doesn't necessarily mean the company is fake — but a real company's offer should have a verifiable website.${sourceNote}`;
       }
 
       checks.push({
@@ -243,21 +254,48 @@ class VerificationService {
       });
     }
 
+    // Community Reputation — a SUPPORTING signal, not a primary one. If we
+    // genuinely found no discussions (common for small/new companies), or
+    // the lookup failed, this is UNKNOWN — excluded from scoring entirely
+    // rather than penalizing companies with no online footprint.
+    if (communityReputation && communityReputation.discussionsFound > 0) {
+      const status =
+        communityReputation.trustSignal === "HIGH"
+          ? "PASS"
+          : communityReputation.trustSignal === "LOW"
+          ? "FAIL"
+          : "UNKNOWN"; // MEDIUM reads as neither a pass nor a fail signal
+
+      checks.push({
+        id: "COMMUNITY_REPUTATION",
+        label: "Community Reputation",
+        category: "AI_ASSESSED",
+        status,
+        weight: WEIGHTS.COMMUNITY_REPUTATION,
+        detail:
+          communityReputation.summary ||
+          `Found ${communityReputation.discussionsFound} community discussions about this company.`,
+        score: communityReputation.communityScore,
+      });
+    }
+
     return checks;
   }
 
   // ─── Weighted average over only the checks that applied ────────────────────
-  // AI_CONSISTENCY contributes proportionally to its score rather than a
-  // binary pass/fail, since it's a 0-100 judgment, not a yes/no fact.
+  // AI_CONSISTENCY and COMMUNITY_REPUTATION contribute proportionally to
+  // their 0-100 score rather than a binary pass/fail, since both are
+  // graded judgments, not yes/no facts.
   _computeTrustScore(checks) {
     let earned = 0;
     let possible = 0;
+    const PROPORTIONAL_IDS = new Set(["AI_CONSISTENCY", "COMMUNITY_REPUTATION"]);
 
     for (const check of checks) {
       if (check.status === "UNKNOWN") continue;
       possible += check.weight;
 
-      if (check.id === "AI_CONSISTENCY" && typeof check.score === "number") {
+      if (PROPORTIONAL_IDS.has(check.id) && typeof check.score === "number") {
         earned += check.weight * (check.score / 100);
       } else if (check.status === "PASS") {
         earned += check.weight;

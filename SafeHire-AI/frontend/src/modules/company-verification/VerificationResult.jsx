@@ -12,6 +12,9 @@ import {
   Building2,
   AlertTriangle,
   ShieldCheck,
+  Users,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
 import { AppLayout } from "../../components/layouts/AppLayout";
 import { CardSkeleton } from "../../components/ui/Skeleton";
@@ -62,14 +65,16 @@ function TrustGauge({ score }) {
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (score / 100) * circumference;
   const color =
-    score >= 80 ? NEON : score >= 60 ? "#FFD24A" : score >= 40 ? "#FF9F45" : RED;
+    score > 85 ? NEON : score > 70 ? "#FFD24A" : score > 50 ? "#FF9F45" : score > 30 ? "#FF7A45" : RED;
   const glow =
-    score >= 80
+    score > 85
       ? NEON_SOFT
-      : score >= 60
+      : score > 70
       ? "rgba(255,210,74,0.35)"
-      : score >= 40
+      : score > 50
       ? "rgba(255,159,69,0.35)"
+      : score > 30
+      ? "rgba(255,122,69,0.35)"
       : "rgba(255,92,92,0.35)";
 
   return (
@@ -123,10 +128,11 @@ function TrustGauge({ score }) {
 }
 
 function trustLabel(score) {
-  if (score >= 80) return "Looks Legitimate";
-  if (score >= 60) return "Mostly Consistent";
-  if (score >= 40) return "Proceed With Caution";
-  return "High Risk — Many Checks Failed";
+  if (score <= 30) return "High Risk";
+  if (score <= 50) return "Suspicious";
+  if (score <= 70) return "Needs Verification";
+  if (score <= 85) return "Likely Legitimate";
+  return "Strong Evidence";
 }
 
 function SectionLabel({ icon: Icon, label, count }) {
@@ -297,7 +303,7 @@ export default function VerificationResult() {
     );
   }
 
-  const { extracted = {}, checks = [], aiAssessment = {} } = data;
+  const { extracted = {}, checks = [], aiAssessment = {}, communityReputation } = data;
 
   return (
     <AppLayout>
@@ -376,9 +382,24 @@ export default function VerificationResult() {
                 >
                   {extracted.companyName || "Unknown Company"}
                 </p>
-                <p style={{ marginTop: 8, fontSize: 14, color: TEXT_DIM, lineHeight: 1.6 }}>
-                  {trustLabel(data.trustScore ?? 0)}
-                </p>
+                <div style={{ marginTop: 10, display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: TEXT_DIM }}>
+                    {data.trustScore ?? 0}/100
+                  </span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>
+                    {data.classification?.label || trustLabel(data.trustScore ?? 0)}
+                  </span>
+                  {data.recommendation?.confidence && (
+                    <span style={{ fontSize: 12, color: TEXT_DIM }}>
+                      · Confidence: {data.recommendation.confidence}
+                    </span>
+                  )}
+                </div>
+                {data.recommendation?.reason && (
+                  <p style={{ marginTop: 8, fontSize: 13.5, color: TEXT_DIM, lineHeight: 1.7, maxWidth: 480 }}>
+                    {data.recommendation.reason}
+                  </p>
+                )}
 
                 <div style={{ marginTop: 22, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                   {extracted.roleTitle && (
@@ -456,6 +477,186 @@ export default function VerificationResult() {
                     ))}
                   </ul>
                 )}
+              </div>
+            </section>
+          )}
+
+          {/* ── Recommendation ───────────────────────────────────────── */}
+          {data.recommendation && (
+            <section style={{ marginBottom: 32 }}>
+              <SectionLabel icon={ShieldCheck} label="Recommendation" />
+              <div style={{ ...panel, padding: 24 }}>
+                {data.recommendation.positives?.length > 0 && (
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
+                    {data.recommendation.positives.map((item, i) => (
+                      <li key={`pos-${i}`} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        <span style={{ color: NEON, fontSize: 14, lineHeight: 1.6, flexShrink: 0 }}>✓</span>
+                        <span style={{ fontSize: 13.5, lineHeight: 1.7, color: TEXT_BODY }}>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {data.recommendation.concerns?.length > 0 && (
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      margin: 0,
+                      padding: 0,
+                      marginTop: data.recommendation.positives?.length ? 14 : 0,
+                      display: "grid",
+                      gap: 10,
+                    }}
+                  >
+                    {data.recommendation.concerns.map((item, i) => (
+                      <li key={`con-${i}`} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                        <span style={{ color: "#FFB23F", fontSize: 14, lineHeight: 1.6, flexShrink: 0 }}>⚠</span>
+                        <span style={{ fontSize: 13.5, lineHeight: 1.7, color: TEXT_BODY }}>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {data.recommendation.riskLevel && (
+                  <div
+                    style={{
+                      marginTop: 20,
+                      paddingTop: 16,
+                      borderTop: `1px solid ${DIVIDER}`,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ fontSize: 12.5, color: TEXT_DIM, fontWeight: 600 }}>Risk Level:</span>
+                    <span style={{ fontSize: 13.5, color: TEXT, fontWeight: 700 }}>
+                      {data.recommendation.riskLevel}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* ── Community Reputation ─────────────────────────────────── */}
+          {communityReputation && communityReputation.discussionsFound > 0 && (
+            <section style={{ marginBottom: 32 }}>
+              <SectionLabel icon={Users} label="Community Reputation" />
+              <div style={{ ...panel, padding: 24 }}>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "4px 10px",
+                    borderRadius: 999,
+                    background: "rgba(201,166,255,0.12)",
+                    border: "1px solid rgba(201,166,255,0.3)",
+                    color: "#C9A6FF",
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase",
+                    marginBottom: 16,
+                  }}
+                >
+                  🤖 AI Summary of Public Discussions
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    flexWrap: "wrap",
+                    gap: 16,
+                    marginBottom: 18,
+                  }}
+                >
+                  <p style={{ fontSize: 14, lineHeight: 1.7, color: TEXT_BODY, margin: 0, flex: 1, minWidth: 220 }}>
+                    {communityReputation.summary}
+                  </p>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        color: TEXT_DIM,
+                      }}
+                    >
+                      Found {communityReputation.discussionsFound} discussions
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 24, marginBottom: 20 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <ThumbsUp size={14} color={NEON} />
+                    <span style={{ fontSize: 13, color: TEXT_BODY }}>
+                      {communityReputation.positiveMentions} positive
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <ThumbsDown size={14} color={RED} />
+                    <span style={{ fontSize: 13, color: TEXT_BODY }}>
+                      {communityReputation.negativeMentions} negative
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+                  {communityReputation.commonPositives?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: NEON, marginBottom: 10 }}>
+                        Common Positives
+                      </div>
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                        {communityReputation.commonPositives.map((item, i) => (
+                          <li key={i} style={{ fontSize: 13, lineHeight: 1.6, color: TEXT_BODY }}>
+                            ✓ {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {communityReputation.commonNegatives?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#FF9F45", marginBottom: 10 }}>
+                        Common Concerns
+                      </div>
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                        {communityReputation.commonNegatives.map((item, i) => (
+                          <li key={i} style={{ fontSize: 13, lineHeight: 1.6, color: TEXT_BODY }}>
+                            ⚠ {item}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+
+                {communityReputation.scamSpecificFlags?.length > 0 && (
+                  <div style={{ marginTop: 20, paddingTop: 20, borderTop: `1px solid ${DIVIDER}` }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: RED, marginBottom: 10 }}>
+                      Scam-Pattern Reports
+                    </div>
+                    <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 8 }}>
+                      {communityReputation.scamSpecificFlags.map((flag, i) => (
+                        <li key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                          <AlertTriangle size={14} color={RED} style={{ marginTop: 2, flexShrink: 0 }} />
+                          <span style={{ fontSize: 13, lineHeight: 1.6, color: TEXT_BODY }}>{flag}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div style={{ marginTop: 20, fontSize: 11, color: TEXT_DIM, fontStyle: "italic" }}>
+                  Generated from public discussions and reviews. May not represent all employee
+                  experiences. A supporting signal only — official verification checks above carry
+                  more weight in the Trust Score.
+                </div>
               </div>
             </section>
           )}
